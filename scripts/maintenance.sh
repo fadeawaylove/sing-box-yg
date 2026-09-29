@@ -115,7 +115,7 @@ sbyg_stage() {
     printf '%s/stage/%s\n' "$SBYG_STATE" "$digest"
 }
 sbyg_validate() {
-    local cert=$1 key=$2 identity pubcert pubkey start now
+    local cert=$1 key=$2 identity pubcert pubkey start now match
     shift 2
     (($#)) || return 1
     openssl x509 -in "$cert" -noout -checkend 0 >/dev/null 2>&1 || return 1
@@ -128,12 +128,15 @@ sbyg_validate() {
     for identity in "$@"; do
         sbyg_identity "$identity" || return 1
         if [[ $identity == *:* || $identity =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            openssl x509 -in "$cert" -noout -checkip "$identity" >/dev/null 2>&1 || return 1
+            # Older OpenSSL releases return zero even for an identity mismatch.
+            match=$(LC_ALL=C openssl x509 -in "$cert" -noout -checkip "$identity" 2>/dev/null) || return 1
+            [[ $match == "IP $identity does match certificate" ]] || return 1
         elif [[ $identity == '*.'* ]]; then
             # A concrete host match alone would incorrectly accept a single-host certificate.
             openssl x509 -in "$cert" -noout -ext subjectAltName 2>/dev/null | tr ',' '\n' | sed 's/^[[:space:]]*//' | grep -Fxi "DNS:$identity" >/dev/null || return 1
         else
-            openssl x509 -in "$cert" -noout -checkhost "$identity" >/dev/null 2>&1 || return 1
+            match=$(LC_ALL=C openssl x509 -in "$cert" -noout -checkhost "$identity" 2>/dev/null) || return 1
+            [[ $match == "Hostname $identity does match certificate" ]] || return 1
         fi
     done
 }

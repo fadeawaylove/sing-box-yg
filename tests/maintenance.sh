@@ -124,6 +124,19 @@ printf 'test.example\n' > "$SBYG_STATE/identities"
 jq -n --arg cert "$SBYG_CERT_DIR/cert.crt" --arg key "$SBYG_CERT_DIR/private.key" '{inbounds:[{tls:{certificate_path:$cert,key_path:$key}}]}' > "$SBYG_CONFIG"
 expect_ok 'valid certificate + DNS, wildcard, IPv4, IPv6 identities' sbyg_validate "$WORK/old.crt" "$WORK/old.key" test.example '*.wild.example' 127.0.0.1 ::1
 expect_fail 'wrong identity rejected' sbyg_validate "$WORK/old.crt" "$WORK/old.key" other.example
+expect_fail 'wrong IP rejected' sbyg_validate "$WORK/old.crt" "$WORK/old.key" 127.0.0.2
+legacy_identity_check() (
+    openssl() {
+        case " $* " in
+            *' -checkhost '*) echo 'Hostname other.example does NOT match certificate'; return 0;;
+            *' -checkip '*) echo 'IP 127.0.0.2 does NOT match certificate'; return 0;;
+        esac
+        command openssl "$@"
+    }
+    sbyg_validate "$WORK/old.crt" "$WORK/old.key" "$1"
+)
+expect_fail 'zero-exit OpenSSL DNS mismatch rejected' legacy_identity_check other.example
+expect_fail 'zero-exit OpenSSL IP mismatch rejected' legacy_identity_check 127.0.0.2
 expect_fail 'expired certificate rejected' sbyg_validate "$WORK/expired.crt" "$WORK/expired.key" test.example
 expect_fail 'wrong key rejected' sbyg_validate "$WORK/old.crt" "$WORK/new.key" test.example
 expect_fail 'corrupt cert rejected' sbyg_validate "$WORK/ext" "$WORK/old.key" test.example
