@@ -4,10 +4,12 @@
 
 Linux CI 已通过：[运行 36604855285](https://github.com/fadeawaylove/sing-box-yg/actions/runs/36604855285)，代码提交 `e6f6f0f40eace6b377a8be45397a1281bfa666dc`，Ubuntu 24.04。后续发布文档变更不改变该测试代码。
 
+自动迁移入口及完整回归也已通过 Linux CI：[运行 36606241442](https://github.com/fadeawaylove/sing-box-yg/actions/runs/36606241442)，提交 `eac247ec0fa8df9f27dcbd02118a87bf8cf4919f`。`tests/migration.sh` 覆盖运行/停止状态、重复执行、SAN 保留、错误旧记录、安装/任务写入失败恢复、忙碌 ACME、配置/读取失败、记录歧义、无效密钥和过期证书。迁移使用替身服务与临时文件，逐字节确认原配置和证书不变，并拒绝任何服务修改命令。
+
 | 验证 | 结果 |
 | --- | --- |
 | Bash 语法：主脚本、证书脚本、维护入口及测试脚本 | 通过 |
-| `python tests/check_integration.py` | 通过；11 个自有资源路径、主脚本与维护入口成对更新、官方客户端来源、当前证书脚本哈希 |
+| `python tests/check_integration.py` | 通过；12 个自有资源路径、主脚本与维护入口成对更新、官方客户端来源、当前证书脚本哈希 |
 | `bash tests/maintenance.sh` | 45 个场景在 Linux 通过，含 BusyBox 空表／权限／不完整读取、绑定失败回滚、OpenSSL 零退出码身份不匹配、日志权限 |
 | `bash tests/menu_flow.sh` | 21 条菜单成功/失败路径通过；复用现有 ACME 客户端 |
 | `bash tests/install_flow.sh` | 2 项通过：证书失败中止安装；选择自签证书后正常初始化 TLS 并继续 |
