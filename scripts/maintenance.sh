@@ -17,8 +17,10 @@ sbyg_init() {
     mkdir -p "$SBYG_STATE" "$SBYG_LOG_DIR" || return 1
     chmod 700 "$SBYG_STATE" "$SBYG_LOG_DIR" || return 1
 }
-sbyg_log() {
+sbyg_log() (
     local log="$SBYG_LOG_DIR/maintenance.log" n
+    umask 077
+    touch "$log" && chmod 600 "$log" || return 1
     if [[ -f $log ]] && [[ $(wc -c < "$log") -gt 1048576 ]]; then
         for n in 4 3 2 1; do
             [[ ! -f $log.$n ]] || mv -f "$log.$n" "$log.$((n+1))" || return 1
@@ -26,7 +28,7 @@ sbyg_log() {
         mv -f "$log" "$log.1" || return 1
     fi
     printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$log"
-}
+)
 sbyg_service() {
     if [[ -d $SBYG_RUN_DIR/systemd/system ]] && command -v systemctl >/dev/null; then
         SBYG_MANAGER=systemd; SBYG_SERVICE=$(command -v systemctl)
