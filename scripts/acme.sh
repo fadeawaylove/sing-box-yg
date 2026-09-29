@@ -10,6 +10,31 @@ yellow(){ echo -e "\033[33m\033[01m$1\033[0m";}
 white(){ echo -e "\033[37m\033[01m$1\033[0m";}
 readp(){ read -p "$(yellow "$1")" $2;}
 [[ $EUID -ne 0 ]] && yellow "请以root模式运行脚本" && exit
+
+# Load lazily: sourcing maintenance never runs the installer or menu.
+sbyg_load(){
+    declare -F sbyg_main >/dev/null && return 0
+    local base helper tmp
+    base=$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)
+    for helper in "$base/scripts/maintenance.sh" "$base/maintenance.sh" /usr/local/lib/sing-box-yg/maintenance.sh; do
+        if [[ -f $helper ]]; then source "$helper"; return $?; fi
+    done
+    tmp=$(mktemp) || return 1
+    if curl -fsSL --retry 2 https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/scripts/maintenance.sh -o "$tmp" && bash -n "$tmp"; then
+        source "$tmp"
+        sbyg_install_runtime
+        local result=$?
+        rm -f "$tmp"
+        (( result == 0 )) || return "$result"
+        source "$SBYG_RUNTIME"
+    else
+        rm -f "$tmp"
+        red "维护脚本下载失败，未修改定时任务"
+        return 1
+    fi
+}
+
+sbyg_load || exit 1
 #[[ -e /etc/hosts ]] && grep -qE '^ *172.65.251.78 gitlab.com' /etc/hosts || echo -e '\n172.65.251.78 gitlab.com' >> /etc/hosts
 if [[ -f /etc/redhat-release ]]; then
 release="Centos"
@@ -108,84 +133,39 @@ sleep 2
 fi
 
 acme2(){
-if [[ -n $(lsof -i :80|grep -v "PID") ]]; then
-yellow "检测到80端口被占用，现执行80端口全释放"
-sleep 2
-lsof -i :80|grep -v "PID"|awk '{print "kill -9",$2}'|sh >/dev/null 2>&1
-green "80端口全释放完毕！"
-sleep 2
+if [[ -n $(lsof -i :80 | grep -v "PID") ]]; then
+    red "80端口被占用，请自行释放或选择DNS验证；未终止任何程序"
+    return 1
 fi
 }
+
 acme3(){
-readp "请输入注册所需的邮箱（回车跳过则自动生成虚拟gmail邮箱）：" Aemail
-if [ -z $Aemail ]; then
-auto=`date +%s%N |md5sum | cut -c 1-6`
-Aemail=$auto@gmail.com
+if [[ -s "$SBYG_ACME" ]]; then
+    green "复用现有ACME客户端、账户和验证配置"
+    return 0
 fi
-yellow "当前注册的邮箱名称：$Aemail"
-green "开始安装acme.sh申请证书脚本"
-bash ~/.acme.sh/acme.sh --uninstall >/dev/null 2>&1
-rm -rf ~/.acme.sh acme.sh
-uncronac
-wget -N https://github.com/Neilpang/acme.sh/archive/master.tar.gz >/dev/null 2>&1
-tar -zxvf master.tar.gz >/dev/null 2>&1
-cd acme.sh-master >/dev/null 2>&1
-./acme.sh --install >/dev/null 2>&1
-cd
-curl https://get.acme.sh | sh -s email=$Aemail
-if [[ -n $(~/.acme.sh/acme.sh -v 2>/dev/null) ]]; then
-green "安装acme.sh证书申请程序成功"
-bash ~/.acme.sh/acme.sh --upgrade --use-wget --auto-upgrade
+readp "请输入注册所需的邮箱:" Aemail
+[[ -n $Aemail ]] || { red "邮箱不能为空"; return 1; }
+local installer
+installer=$(mktemp) || return 1
+if curl -fsSL https://get.acme.sh -o "$installer" && sh "$installer" email="$Aemail"; then
+    rm -f "$installer"
+    [[ -s "$SBYG_ACME" ]] || return 1
 else
-red "安装acme.sh证书申请程序失败" && exit
+    rm -f "$installer"
+    red "安装ACME客户端失败，保留现有文件"
+    return 1
 fi
 }
 
 checktls(){
-if [[ -s /root/ygkkkca/cert.crt && -s /root/ygkkkca/private.key ]]; then
-cronac
-green "IP域名证书申请成功或已存在！域名证书（cert.crt）和密钥（private.key）已保存到 /root/ygkkkca文件夹内"
-yellow "公钥文件crt路径如下，可直接复制"
-green "/root/ygkkkca/cert.crt"
-yellow "密钥文件key路径如下，可直接复制"
-green "/root/ygkkkca/private.key"
-ym=`bash ~/.acme.sh/acme.sh --list | awk 'NR>1{print $1}' | tail -1`
-echo $ym > /root/ygkkkca/ca.log
-if [[ -f '/etc/hysteria/config.json' ]]; then
-blue "检测到Hysteria-1代理协议，如果你安装了甬哥的Hysteria脚本，请在Hysteria脚本执行申请/变更证书，此证书将自动应用"
-fi
-if [[ -f '/etc/caddy/Caddyfile' ]]; then
-blue "检测到Naiveproxy代理协议，如果你安装了甬哥的Naiveproxy-yg脚本，请在Naiveproxy脚本执行申请/变更证书，此证书将自动应用"
-fi
-if [[ -f '/etc/tuic/tuic.json' ]]; then
-blue "检测到Tuic代理协议，如果你安装了甬哥的Tuic脚本，请在Tuic脚本执行申请/变更证书，此证书将自动应用"
-fi
-if [[ -f '/usr/bin/x-ui' ]]; then
-blue "检测到x-ui（xray代理协议），如果你安装了甬哥的x-ui-yg脚本，开启tls选项，此证书将自动应用"
-fi
-if [[ -f '/etc/s-box/sb.json' ]]; then
-blue "检测到Sing-box内核代理，如果你安装了甬哥的Sing-box-yg脚本，请在Sing-box脚本执行申请/变更证书，此证书将自动应用"
-fi
-if [[ -f "$HOME/agsbx/sb.json" ]]; then
-blue "检测到sing-box内核代理，如果你安装了甬哥的Argosbx小钢炮脚本，HY2/TUIC/AnyTLS/Naiveproxy四大协议将支持IP域名证书"
-fi
-else
-bash ~/.acme.sh/acme.sh --uninstall >/dev/null 2>&1
-rm -rf /root/ygkkkca
-rm -rf ~/.acme.sh acme.sh
-uncronac
-red "遗憾，IP域名证书申请失败，建议如下："
-yellow "1、如果你是域名证书申请：如果解析到的IP是104.2开头的或者172开头的IP，请确保CF中的CDN黄云已关闭，解析的IP必须是VPS的本地IP"
-echo
-yellow "2、如果你是域名证书申请：更换下二级域名自定义名称再尝试执行重装脚本（重要）"
-green "例：原二级域名 x.ygkkk.eu.org 或 x.ygkkk.cf ，在cloudflare中重命名其中的x名称"
-echo
-yellow "3、如果你是IP证书或者域名证书申请：因为同个本地IP连续多次申请证书有时间限制，等一段时间再重装脚本" && exit
-fi
+sbyg_ids && sbyg_validate "$SBYG_CERT_DIR/cert.crt" "$SBYG_CERT_DIR/private.key" "${SBYG_IDS[@]}" || {
+    red "证书校验失败，已保留账户、证书及日志"
+    return 1
 }
-
-installCA(){
-bash ~/.acme.sh/acme.sh --install-cert -d ${ym} --key-file /root/ygkkkca/private.key --fullchain-file /root/ygkkkca/cert.crt --ecc
+cronac || return 1
+green "证书校验通过，自动维护任务已配置；申请/续期结果见维护日志"
+green "证书：$SBYG_CERT_DIR/cert.crt；私钥：$SBYG_CERT_DIR/private.key"
 }
 
 checkip(){
@@ -211,7 +191,7 @@ if [ "$menu" = "1" ] ; then
 green "VPS本地的IP：$vpsip"
 readp "请输入域名解析的IP，与VPS本地IP($vpsip)保持一致：" domainIP
 else
-exit
+return 1
 fi
 elif [[ -n $(echo $domainIP | grep ":") ]]; then
 green "当前域名解析到的IPV6地址：$domainIP"
@@ -228,7 +208,7 @@ else
 yellow "1、请确保CDN小黄云关闭状态(仅限DNS)，其他域名解析网站设置同理"
 yellow "2、请检查域名解析网站设置的IP是否正确"
 fi
-exit
+return 1
 else
 green "IP匹配正确，申请证书开始…………"
 fi
@@ -236,15 +216,10 @@ fi
 
 checkacmeca(){
 if [[ "${ym}" == *ip6.arpa* ]]; then
-red "目前不支持ip6.arpa域名申请证书" && exit
+red "目前不支持ip6.arpa域名申请证书" && return 1
 fi
-nowca=`bash ~/.acme.sh/acme.sh --list | awk 'NR>1{print $1}' | tail -1`
-if [[ $nowca == $ym ]]; then
-red "经检测，输入的域名已有证书申请记录，不用重复申请"
-red "证书申请记录如下："
-bash ~/.acme.sh/acme.sh --list
-yellow "如果一定要重新申请，请先执行删除证书选项" && exit
-fi
+# Let the official client decide whether the existing certificate is due.
+# Existing accounts/certificates are never deleted to force an issuance.
 }
 
 ACMEstandaloneIP(){
@@ -264,15 +239,15 @@ readp "请输入申请IP证书的IP【格式：IPV4或者IPV6或者IPV4 IPV6，�
 if [[ -z $ym ]]; then
 ym=${vpsip%% *}
 fi
-checkacmeca
+checkacmeca || return 1
 ip1=$(echo $ym | awk '{print $1}')
 if [[ "$ym" == *" "* && "$ym" == *":"* ]]; then
 ip2=$(echo $ym | awk '{print $2}')
-bash ~/.acme.sh/acme.sh --issue -d "$ip1" -d "$ip2" --standalone -k ec-256 --server letsencrypt --cert-profile shortlived --days 3 --insecure
+sbyg_issue --issue -d "$ip1" -d "$ip2" --standalone -k ec-256 --server letsencrypt --cert-profile shortlived --days 3 --insecure || return 1
 else
-bash ~/.acme.sh/acme.sh --issue -d "$ym" --standalone -k ec-256 --server letsencrypt --cert-profile shortlived --days 3 --insecure
+sbyg_issue --issue -d "$ym" --standalone -k ec-256 --server letsencrypt --cert-profile shortlived --days 3 --insecure || return 1
 fi
-bash ~/.acme.sh/acme.sh --install-cert -d "$ip1" --key-file /root/ygkkkca/private.key --fullchain-file /root/ygkkkca/cert.crt --ecc
+# Installation and validation performed by sbyg_issue.
 checktls
 }
 
@@ -284,29 +259,29 @@ readp "请输入解析完成的域名:" ym
 #case "$vpsip" in *:*) ym="${vpsip//:/-}.nip.io" ;; *) ym="${vpsip//./-}.nip.io" ;; esac
 #fi
 green "已输入的域名:$ym" && sleep 1
-checkacmeca
-checkip
+checkacmeca || return 1
+checkip || return 1
+[[ -n $domainIP && ( $domainIP == "$v4" || $domainIP == "$v6" ) ]] || return 1
 if [[ $domainIP = $v4 ]]; then
-bash ~/.acme.sh/acme.sh --issue -d ${ym} --standalone -k ec-256 --server letsencrypt --insecure
+sbyg_issue --issue -d "${ym}" --standalone -k ec-256 --server letsencrypt --insecure || return 1
 fi
 if [[ $domainIP = $v6 ]]; then
-bash ~/.acme.sh/acme.sh --issue -d ${ym} --standalone -k ec-256 --server letsencrypt --listen-v6 --insecure
+sbyg_issue --issue -d "${ym}" --standalone -k ec-256 --server letsencrypt --listen-v6 --insecure || return 1
 fi
-installCA
+# Installation and validation performed by sbyg_issue.
 checktls
 }
 
 ACMEDNS(){
 readp "请输入解析完成的域名:" ym
 green "已输入的域名:$ym" && sleep 1
-checkacmeca
+checkacmeca || return 1
 if [[ -n $(echo $ym | grep \*) ]]; then
 green "经检测，当前为泛域名证书申请，" && sleep 2
 else
 green "经检测，当前为单域名证书申请，" && sleep 2
 fi
-checkacmeca
-checkip
+checkacmeca || return 1
 echo
 ab="请选择托管域名解析服务商：\n1.Cloudflare\n2.腾讯云DNSPod\n3.阿里云Aliyun\n 请选择："
 readp "$ab" cd
@@ -338,38 +313,25 @@ else
     readp "请复制Cloudflare的Global API Key：" GAK
     export CF_Key="$GAK"
 fi
-if [[ $domainIP = $v4 ]]; then
-bash ~/.acme.sh/acme.sh --issue --dns dns_cf -d ${ym} -k ec-256 --server letsencrypt --insecure
-fi
-if [[ $domainIP = $v6 ]]; then
-bash ~/.acme.sh/acme.sh --issue --dns dns_cf -d ${ym} -k ec-256 --server letsencrypt --listen-v6 --insecure
-fi
+sbyg_issue --issue --dns dns_cf -d "${ym}" -k ec-256 --server letsencrypt --insecure || return 1
 ;;
 2 )
 readp "请复制腾讯云DNSPod的DP_Id：" DPID
 export DP_Id="$DPID"
 readp "请复制腾讯云DNSPod的DP_Key：" DPKEY
 export DP_Key="$DPKEY"
-if [[ $domainIP = $v4 ]]; then
-bash ~/.acme.sh/acme.sh --issue --dns dns_dp -d ${ym} -k ec-256 --server letsencrypt --insecure
-fi
-if [[ $domainIP = $v6 ]]; then
-bash ~/.acme.sh/acme.sh --issue --dns dns_dp -d ${ym} -k ec-256 --server letsencrypt --listen-v6 --insecure
-fi
+sbyg_issue --issue --dns dns_dp -d "${ym}" -k ec-256 --server letsencrypt --insecure || return 1
 ;;
 3 )
 readp "请复制阿里云Aliyun的Ali_Key：" ALKEY
 export Ali_Key="$ALKEY"
 readp "请复制阿里云Aliyun的Ali_Secret：" ALSER
 export Ali_Secret="$ALSER"
-if [[ $domainIP = $v4 ]]; then
-bash ~/.acme.sh/acme.sh --issue --dns dns_ali -d ${ym} -k ec-256 --server letsencrypt --insecure
-fi
-if [[ $domainIP = $v6 ]]; then
-bash ~/.acme.sh/acme.sh --issue --dns dns_ali -d ${ym} -k ec-256 --server letsencrypt --listen-v6 --insecure
-fi
+sbyg_issue --issue --dns dns_ali -d "${ym}" -k ec-256 --server letsencrypt --insecure || return 1
+;;
+*) red "无效的DNS服务商选项"; return 1;;
 esac
-installCA
+# Installation and validation performed by sbyg_issue.
 checktls
 }
 
@@ -381,11 +343,13 @@ ACMEDNS
 else
 systemctl stop wg-quick@wgcf >/dev/null 2>&1
 kill -15 $(pgrep warp-go) >/dev/null 2>&1 && sleep 2
-ACMEDNS
+local operation_rc=0
+ACMEDNS || operation_rc=$?
 systemctl start wg-quick@wgcf >/dev/null 2>&1
 systemctl restart warp-go >/dev/null 2>&1
 systemctl enable warp-go >/dev/null 2>&1
 systemctl start warp-go >/dev/null 2>&1
+return "$operation_rc"
 fi
 }
 
@@ -397,11 +361,13 @@ ACMEstandaloneDNS
 else
 systemctl stop wg-quick@wgcf >/dev/null 2>&1
 kill -15 $(pgrep warp-go) >/dev/null 2>&1 && sleep 2
-ACMEstandaloneDNS
+local operation_rc=0
+ACMEstandaloneDNS || operation_rc=$?
 systemctl start wg-quick@wgcf >/dev/null 2>&1
 systemctl restart warp-go >/dev/null 2>&1
 systemctl enable warp-go >/dev/null 2>&1
 systemctl start warp-go >/dev/null 2>&1
+return "$operation_rc"
 fi
 }
 
@@ -413,11 +379,13 @@ ACMEstandaloneIP
 else
 systemctl stop wg-quick@wgcf >/dev/null 2>&1
 kill -15 $(pgrep warp-go) >/dev/null 2>&1 && sleep 2
-ACMEstandaloneIP
+local operation_rc=0
+ACMEstandaloneIP || operation_rc=$?
 systemctl start wg-quick@wgcf >/dev/null 2>&1
 systemctl restart warp-go >/dev/null 2>&1
 systemctl enable warp-go >/dev/null 2>&1
 systemctl start warp-go >/dev/null 2>&1
+return "$operation_rc"
 fi
 }
 
@@ -448,55 +416,34 @@ bash ~/.acme.sh/acme.sh --list
 }
 
 acmeshow(){
-if [[ -n $(~/.acme.sh/acme.sh -v 2>/dev/null) ]]; then
-caacme1=`bash ~/.acme.sh/acme.sh --list | awk 'NR>1{print $1}' | tail -1`
-if [[ -n $caacme1 && ! $caacme1 == "Main_Domain" ]] && [[ -f /root/ygkkkca/cert.crt && -f /root/ygkkkca/private.key && -s /root/ygkkkca/cert.crt && -s /root/ygkkkca/private.key ]]; then
-caacme=$caacme1
-else
-caacme='无证书申请记录'
-fi
-else
-caacme='未安装acme'
+caacme='未找到通过校验的托管证书'
+local identity
+identity=$(cat "$SBYG_CERT_DIR/ca.log" 2>/dev/null)
+if [[ -n $identity ]] && sbyg_validate "$SBYG_CERT_DIR/cert.crt" "$SBYG_CERT_DIR/private.key" "$identity"; then
+    caacme=$identity
 fi
 }
+
 cronac(){
-uncronac
-crontab -l > /tmp/crontab.tmp
-echo "0 0 * * * bash ~/.acme.sh/acme.sh --cron >/dev/null 2>&1" >> /tmp/crontab.tmp
-crontab /tmp/crontab.tmp
-rm /tmp/crontab.tmp
+sbyg_main install-cron renew
 }
 uncronac(){
-crontab -l > /tmp/crontab.tmp
-sed -i '/--cron/d' /tmp/crontab.tmp
-crontab /tmp/crontab.tmp
-rm /tmp/crontab.tmp
+sbyg_main remove-cron renew
 }
 acmerenew(){
-[[ -z $(~/.acme.sh/acme.sh -v 2>/dev/null) ]] && yellow "未安装acme.sh证书申请，无法执行" && exit
-green "以下显示的域名就是已申请成功的主证书"
-bash ~/.acme.sh/acme.sh --list | awk 'NR>1{print $1}' | tail -1
-echo
-#ab="1.无脑一键续期所有证书（推荐）\n2.选择指定的域名证书续期\n0.返回上一层\n 请选择："
-#readp "$ab" cd
-#case "$cd" in
-#1 )
-green "开始续期证书…………" && sleep 3
-bash ~/.acme.sh/acme.sh --cron -f
-checktls
-#;;
-#2 )
-#readp "请输入要续期的域名证书（复制Main_Domain下显示的域名）:" ym
-#if [[ -n $(bash ~/.acme.sh/acme.sh --list | grep $ym) ]]; then
-#bash ~/.acme.sh/acme.sh --renew -d ${ym} --force --ecc
-#checktls
-#else
-#red "未找到你输入的${ym}域名证书，请自行核实！" && exit
-#fi
-#;;
-#0 ) start_menu;;
-#esac
+[[ -s "$SBYG_ACME" ]] || { red "未安装ACME客户端"; return 1; }
+if [[ ! -s "$SBYG_STATE/identities" ]]; then
+    red "旧安装尚未迁移，请按迁移文档绑定明确的证书标识"
+    return 1
+fi
+if sbyg_main renew; then
+    green "维护检查完成（未到续期时间时不会强制申请），详见维护日志"
+else
+    red "维护失败或证书临期，请检查错误摘要和维护日志"
+    return 1
+fi
 }
+
 uninstall(){
 [[ -z $(~/.acme.sh/acme.sh -v 2>/dev/null) ]] && yellow "未安装acme.sh证书申请，无法执行" && exit
 curl https://get.acme.sh | sh
@@ -526,7 +473,7 @@ green "Acme-yg脚本版本号 V26.6.17"
 yellow "提示："
 yellow "1、SSH登录的IP与VPS本地IP必须一致"
 yellow "2、80端口模式仅支持单域名证书申请，在80端口不被占用的情况下支持自动续期"
-yellow "3、DNS API模式不支持freenom免费域名申请，支持单域名与泛域名证书申请，无条件自动续期"
+yellow "3、DNS API模式不支持freenom免费域名申请，支持单域名与泛域名证书申请，自动续期需要有效的DNS API权限和网络连接"
 yellow "4、泛域名申请前须在服务商解析处设置一个名称为 * 字符的解析记录 (输入格式：*.一级或者二级主域)"
 yellow "公钥文件crt保存路径：/root/ygkkkca/cert.crt"
 yellow "密钥文件key保存路径：/root/ygkkkca/private.key"

@@ -13,6 +13,30 @@ blue(){ echo -e "\033[36m\033[01m$1\033[0m";}
 white(){ echo -e "\033[37m\033[01m$1\033[0m";}
 readp(){ read -p "$(yellow "$1")" $2;}
 [[ $EUID -ne 0 ]] && yellow "请以root模式运行脚本" && exit
+
+# Load lazily: sourcing maintenance never runs the installer or menu.
+sbyg_load(){
+    declare -F sbyg_main >/dev/null && return 0
+    local base helper tmp
+    base=$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)
+    for helper in "$base/scripts/maintenance.sh" "$base/maintenance.sh" /usr/local/lib/sing-box-yg/maintenance.sh; do
+        if [[ -f $helper ]]; then source "$helper"; return $?; fi
+    done
+    tmp=$(mktemp) || return 1
+    if curl -fsSL --retry 2 https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/scripts/maintenance.sh -o "$tmp" && bash -n "$tmp"; then
+        source "$tmp"
+        sbyg_install_runtime
+        local result=$?
+        rm -f "$tmp"
+        (( result == 0 )) || return "$result"
+        source "$SBYG_RUNTIME"
+    else
+        rm -f "$tmp"
+        red "维护脚本下载失败，未修改定时任务"
+        return 1
+    fi
+}
+
 stty erase $'\b' 2>/dev/null || stty erase '^H' 2>/dev/null
 #[[ -e /etc/hosts ]] && grep -qE '^ *172.65.251.78 gitlab.com' /etc/hosts || echo -e '\n172.65.251.78 gitlab.com' >> /etc/hosts
 if [[ -f /etc/redhat-release ]]; then
@@ -303,7 +327,13 @@ readp "请选择【1-2】：" menu
 if [ -z "$menu" ] || [ "$menu" = "1" ] ; then
 zqzs
 else
-bash <(curl -Ls https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/scripts/acme.sh)
+local cert_script
+cert_script="$(dirname "${BASH_SOURCE[0]}")/scripts/acme.sh"
+if [[ -f $cert_script ]]; then
+    bash "$cert_script" || return 1
+else
+    bash <(curl -fsSL https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/scripts/acme.sh) || return 1
+fi
 if [[ ! -f /root/ygkkkca/cert.crt && ! -f /root/ygkkkca/private.key && ! -s /root/ygkkkca/cert.crt && ! -s /root/ygkkkca/private.key ]]; then
 red "Acme证书申请失败，继续使用自签证书" 
 zqzs
@@ -2519,7 +2549,7 @@ mkdir -p /etc/s-box
 v6
 openyn
 inssb
-inscertificate
+inscertificate || { red "证书配置失败，已停止安装；请修复后重试"; return 1; }
 insport
 sleep 2
 echo
@@ -2539,7 +2569,7 @@ sbservice
 sbactive
 curl -sL https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/version | awk -F "更新内容" '{print $1}' | head -n 1 > /etc/s-box/v
 red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-lnsb && blue "Sing-box-yg脚本安装成功，脚本快捷方式：sb" && cronsb
+lnsb && cronsb && blue "Sing-box-yg脚本安装成功，脚本快捷方式：sb" || { red "脚本或定时任务安装失败，请检查错误"; return 1; }
 echo
 wgcfgo
 sbshare
@@ -3804,33 +3834,34 @@ fi
 }
 
 cronsb(){
-uncronsb
-crontab -l 2>/dev/null > /tmp/crontab.tmp
-echo "0 1 * * * systemctl restart sing-box;rc-service sing-box restart" >> /tmp/crontab.tmp
-crontab /tmp/crontab.tmp >/dev/null 2>&1
-rm /tmp/crontab.tmp
+sbyg_load && sbyg_main install-cron restart
 }
 uncronsb(){
-crontab -l 2>/dev/null > /tmp/crontab.tmp
-sed -i '/sing-box/d' /tmp/crontab.tmp
-sed -i '/sbwpph/d' /tmp/crontab.tmp
-sed -i '/url http/d' /tmp/crontab.tmp
-sed -i '/websbox/d' /tmp/crontab.tmp
-crontab /tmp/crontab.tmp >/dev/null 2>&1
-rm /tmp/crontab.tmp
+sbyg_load && sbyg_main remove-cron restart
 }
 
 lnsb(){
-rm -rf /usr/bin/sb
-curl -L -o /usr/bin/sb -# --retry 2 --insecure https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/sb.sh
-chmod +x /usr/bin/sb
+local tmp result
+tmp=$(mktemp -d) || return 1
+if curl -fsSL --retry 2 https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/sb.sh -o "$tmp/sb.sh" &&
+   curl -fsSL --retry 2 https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/scripts/maintenance.sh -o "$tmp/maintenance.sh" &&
+   bash -n "$tmp/sb.sh" && bash -n "$tmp/maintenance.sh"; then
+    source "$tmp/maintenance.sh"
+    sbyg_install_runtime && install -m 755 "$tmp/sb.sh" /usr/bin/sb
+    result=$?
+else
+    result=1
+fi
+rm -rf -- "$tmp"
+[[ ! -f ${SBYG_RUNTIME:-/usr/local/lib/sing-box-yg/maintenance.sh} ]] || source "${SBYG_RUNTIME:-/usr/local/lib/sing-box-yg/maintenance.sh}"
+return "$result"
 }
 
 upsbyg(){
 if [[ ! -f '/usr/bin/sb' ]]; then
 red "未正常安装Sing-box-yg" && exit
 fi
-lnsb
+lnsb || { red "脚本更新失败，未报告升级成功"; return 1; }
 curl -sL https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/version | awk -F "更新内容" '{print $1}' | head -n 1 > /etc/s-box/v
 green "Sing-box-yg安装脚本升级成功" && sleep 5 && sb
 }
@@ -3899,6 +3930,8 @@ fi
 }
 
 unins(){
+sbyg_load && sbyg_main remove-cron restart || return 1
+sbyg_main remove-cron auxiliary || return 1
 if command -v apk >/dev/null 2>&1; then
 for svc in sing-box argo; do
 rc-service "$svc" stop >/dev/null 2>&1
@@ -3917,7 +3950,6 @@ ps -ef | grep '[s]bwpph' | awk '{print $2}' | xargs kill 2>/dev/null
 kill -15 $(pgrep -f 'websbox' 2>/dev/null) >/dev/null 2>&1
 rm -rf /etc/s-box sbyg_update /usr/bin/sb /root/geoip.db /root/geosite.db /root/warpapi /root/warpip /root/websbox
 rm -f /etc/local.d/alpineargo.start /etc/local.d/alpinesub.start /etc/local.d/alpinews5.start
-uncronsb
 iptables -t nat -F PREROUTING >/dev/null 2>&1
 netfilter-persistent save >/dev/null 2>&1
 service iptables save >/dev/null 2>&1
@@ -4010,7 +4042,13 @@ fi
 }
 
 acme(){
-bash <(curl -Ls https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/scripts/acme.sh)
+local cert_script
+cert_script="$(dirname "${BASH_SOURCE[0]}")/scripts/acme.sh"
+if [[ -f $cert_script ]]; then
+    bash "$cert_script" || return 1
+else
+    bash <(curl -fsSL https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/scripts/acme.sh) || return 1
+fi
 }
 cfwarp(){
 #bash <(curl -Ls https://gitlab.com/rwkgyg/CFwarp/raw/main/CFwarp.sh)

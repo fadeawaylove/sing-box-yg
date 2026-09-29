@@ -2,7 +2,7 @@
 
 由 [fadeawaylove](https://github.com/fadeawaylove/sing-box-yg) 维护的单仓库版本：VPN 管理和证书管理均在本仓库修改、审查和发布。
 
-> 当前仅完成代码整合，尚未修复定时重启和证书续期问题，也未完成 Linux 实际部署验证。请勿把本次整合视为生产可用性验收。
+> 已加入定时任务与证书维护修复及隔离回归测试；本地 Windows 验证不代表 Linux 部署验收。修复分支尚未发布，未修改服务器。
 
 ## 统一入口
 
@@ -26,14 +26,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/mai
 
 本地目录：`C:\code\sing-box-yg`；`origin` 为自己的 fork，`upstream` 为原始 sing-box 仓库。
 
-## 后续待修复
+## 定时任务与证书维护
 
-- 每日 01:00 重启任务无条件同时调用 systemctl 和 rc-service。
-- 自动续期日志被丢弃，缺少失败告警和有效期检查。
-- 证书操作的成功提示仅判断文件存在，未严谨验证操作结果。
-- 续期后的证书加载机制与取消每日重启需要一起验证。
+- 每日 01:00 重启保留，按 systemd/OpenRC 选择一套命令；迁移只替换明确归属本项目的任务。
+- 每日 00:00 执行官方 ACME 正常检查，增加防重入、有限日志轮转和错误/临期摘要。
+- 申请、安装、身份、有效期及私钥匹配分别检查，失败保留账户和原证书。
+- 新证书暂存验证后部署；正在使用该证书的 sing-box 经配置检查后按需重启，停止的服务不会擅自启动。加载失败保留备份和重试状态。
 
-过去证书过期的具体原因尚未确证；这些问题需在隔离环境修复和测试后，再制定生产迁移与回退方案。
+维护入口、依赖、隔离测试、生产迁移与回退步骤见 [维护文档](docs/maintenance-migration.md)。过去证书过期的具体原因仍未确证。**本次保留每日重启，不执行生产迁移。**
 
 ## 安全验证
 
@@ -41,11 +41,18 @@ bash <(curl -fsSL https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/mai
 python3 tests/check_integration.py
 bash -n sb.sh
 bash -n scripts/acme.sh
+bash -n scripts/maintenance.sh
+bash tests/maintenance.sh
+bash tests/menu_flow.sh
+bash tests/install_flow.sh
+bash tests/update_flow.sh
 bash -n serv00.sh
 bash -n serv00keep.sh
 bash -n kp.sh
 git diff --check
 ```
+
+官方 ACME 持久配置回滚另有离线测试：准备官方 3.1.2 源码后运行 `SBYG_TEST_ACME=/绝对路径/acme.sh bash tests/acme_rollback.sh`。测试校验固定源码哈希，仅操作临时账户；详细步骤见维护文档。
 
 这些检查不安装软件、不访问服务器、不申请证书，也不重启任何服务。保留的上游保活工作流为手动触发，本次未执行。
 

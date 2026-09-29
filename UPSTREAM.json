@@ -20,11 +20,13 @@
     "commit": "e3299a70692c9804df75c168ff3d965659161843",
     "upstream_path": "acme.sh",
     "local_path": "scripts/acme.sh",
-    "sha256": "a20546ec0253ea5a52cad7e7a847540c51b77acf2a7cd98eb5dc2723733da28d",
+    "sha256": "22a9464ec88ce1d974c1137526d6ab9d185650ea2941d0a67c180622413048b7",
     "modified": true,
     "upstream_sha256": "06edab0c64cc1439b5991966184ba04f6e6b1736987bfe7d0fec45b1dc32f247",
     "changes": [
-      "Normalize line endings and remove trailing whitespace; no behavior changes"
-    ]
+      "Normalize line endings and remove trailing whitespace; no behavior changes",
+      "Checked issuance, staged deployment, explicit certificate identity, safe renewal and preserved failure evidence via scripts/maintenance.sh"
+    ],
+    "import_sha256": "a20546ec0253ea5a52cad7e7a847540c51b77acf2a7cd98eb5dc2723733da28d"
   }
 }

@@ -1,0 +1,43 @@
+name: Maintenance regression tests
+on:
+  push:
+    paths: ['sb.sh', 'scripts/**', 'tests/**', 'UPSTREAM.json', '.github/workflows/maintenance-tests.yml']
+  pull_request:
+    paths: ['sb.sh', 'scripts/**', 'tests/**', 'UPSTREAM.json', '.github/workflows/maintenance-tests.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and integration
+        run: |
+          for f in sb.sh scripts/*.sh tests/*.sh; do bash -n "$f"; done
+          python3 tests/check_integration.py
+          bash tests/maintenance.sh
+          bash tests/menu_flow.sh
+          bash tests/install_flow.sh
+          bash tests/update_flow.sh
+      - name: Official ACME offline rollback regression
+        run: |
+          client="$RUNNER_TEMP/acme-3.1.2.sh"
+          curl -fL --retry 2 https://raw.githubusercontent.com/acmesh-official/acme.sh/3.1.2/acme.sh -o "$client"
+          echo "c46b41a61c96f67d424e4b4e476907c964b81d53cf94358a9c1d363a4f99c3a4  $client" | sha256sum -c -
+          SBYG_TEST_ACME="$client" bash tests/acme_rollback.sh
+      - name: Download pinned official sing-box and verify checksum
+        env:
+          VERSION: 1.13.4
+        run: |
+          mkdir -p "$RUNNER_TEMP/sing-box-test"
+          cd "$RUNNER_TEMP/sing-box-test"
+          base="https://github.com/SagerNet/sing-box/releases/download/v$VERSION"
+          archive="sing-box-$VERSION-linux-amd64.tar.gz"
+          curl -fL --retry 2 "$base/$archive" -o "$archive"
+          # GitHub release asset digest, verified against the v1.13.4 asset API.
+          echo "634a679fc572d9d0c01b2f5f43b9d6af3f529e9f7011bdfc5931804fc0fa968a  $archive" | sha256sum -c -
+          tar -xzf "$archive"
+          echo "SBYG_TEST_BINARY=$PWD/sing-box-$VERSION-linux-amd64/sing-box" >> "$GITHUB_ENV"
+      - name: Real kernel TLS integration (loopback only)
+        run: bash tests/live_tls.sh
