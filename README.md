@@ -1,3 +1,58 @@
+# sing-box-yg · 自维护整合版
+
+由 [fadeawaylove](https://github.com/fadeawaylove/sing-box-yg) 维护的单仓库版本：VPN 管理和证书管理均在本仓库修改、审查和发布。
+
+> 当前仅完成代码整合，尚未修复定时重启和证书续期问题，也未完成 Linux 实际部署验证。请勿把本次整合视为生产可用性验收。
+
+## 统一入口
+
+以下是未来部署入口，本次整合不要求在现有服务器上运行：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/sb.sh)
+```
+
+安装后的快捷命令仍为 `sb`，菜单 12 调用本仓库的 `scripts/acme.sh`。首次安装中的证书申请入口也使用同一文件；不需要维护第二个证书仓库。
+
+脚本自更新、版本查询和本仓库辅助资源从自己的 `main` 下载。sing-box 内核、官方 acme.sh 客户端，以及既有 WARP/BBR 等第三方依赖仍使用各自上游，并未合并进本项目。
+
+配置路径保持兼容：`/etc/s-box`、`/root/ygkkkca` 和 `/root/.acme.sh`。证书管理脚本与官方客户端虽然都叫 `acme.sh`，但职责不同：本仓库保存前者，后者仍由 acmesh-official/Neilpang 上游提供。
+
+## 来源与维护
+
+主项目 fork 自 [yonggekkk/sing-box-yg](https://github.com/yonggekkk/sing-box-yg)，保留 Git 历史；证书脚本来自 [yonggekkk/acme-yg](https://github.com/yonggekkk/acme-yg)。两者均采用 GPL-3.0，保留根目录 LICENSE、作者信息及下方原始说明。
+
+2026-09-30 的本地修改：引入证书管理脚本，将自身代码/资源下载地址切换至本仓库，并补充整合文档与静态检查。具体上游提交和文件校验值见 [UPSTREAM.json](UPSTREAM.json)。后续上游更新需人工比较合入，不自动覆盖本地修改。
+
+本地目录：`C:\code\sing-box-yg`；`origin` 为自己的 fork，`upstream` 为原始 sing-box 仓库。
+
+## 后续待修复
+
+- 每日 01:00 重启任务无条件同时调用 systemctl 和 rc-service。
+- 自动续期日志被丢弃，缺少失败告警和有效期检查。
+- 证书操作的成功提示仅判断文件存在，未严谨验证操作结果。
+- 续期后的证书加载机制与取消每日重启需要一起验证。
+
+过去证书过期的具体原因尚未确证；这些问题需在隔离环境修复和测试后，再制定生产迁移与回退方案。
+
+## 安全验证
+
+```bash
+python3 tests/check_integration.py
+bash -n sb.sh
+bash -n scripts/acme.sh
+bash -n serv00.sh
+bash -n serv00keep.sh
+bash -n kp.sh
+git diff --check
+```
+
+这些检查不安装软件、不访问服务器、不申请证书，也不重启任何服务。保留的上游保活工作流为手动触发，本次未执行。
+
+---
+
+## 原项目说明（安装入口已切换为本仓库）
+
 ### 一、Sing-box-yg精装桶一键五协议共存脚本（VPS专用）
 ### 二、Serv00/Hostuno-sb-yg多平台一键三协议共存脚本（Serv00/Hostuno专用）
 
@@ -44,11 +99,11 @@
 ### VPS专用一键脚本如下：快捷方式：```sb```
 
 ```
-bash <(wget -qO- https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/sb.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/sb.sh)
 ```
 或者
 ```
-bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/sb.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/sb.sh)
 ```
 
 一键快捷命令现实本地IP订阅：```printf '3\n8\n1\n订阅密码' | sb```
@@ -97,7 +152,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/sb.
 * Argo高度自定义：可以重置临时隧道; 可以继续使用上回的固定隧道; 也可以更换固定隧道的域名或token
 
 ```
-bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/serv00.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/serv00.sh)
 ```
 
 #### Serv00/Hostuno-sb-yg脚本界面预览图，仅限方案一的SSH端安装脚本（注：仅供围观）

@@ -1,0 +1,30 @@
+{
+  "integrated_on": "2026-09-30",
+  "license": "GPL-3.0",
+  "sing_box_yg": {
+    "repository": "https://github.com/yonggekkk/sing-box-yg",
+    "commit": "1efd60b1e1954a27b8e8be995200ca57012b1999",
+    "integration_changes": [
+      ".github/workflows/main.yml",
+      "README.md",
+      "index.html",
+      "kp.sh",
+      "sb.sh",
+      "serv00.sh",
+      "serv00.yml",
+      "serv00keep.sh"
+    ]
+  },
+  "acme_yg": {
+    "repository": "https://github.com/yonggekkk/acme-yg",
+    "commit": "e3299a70692c9804df75c168ff3d965659161843",
+    "upstream_path": "acme.sh",
+    "local_path": "scripts/acme.sh",
+    "sha256": "a20546ec0253ea5a52cad7e7a847540c51b77acf2a7cd98eb5dc2723733da28d",
+    "modified": true,
+    "upstream_sha256": "06edab0c64cc1439b5991966184ba04f6e6b1736987bfe7d0fec45b1dc32f247",
+    "changes": [
+      "Normalize line endings and remove trailing whitespace; no behavior changes"
+    ]
+  }
+}
