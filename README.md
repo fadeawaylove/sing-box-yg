@@ -2,7 +2,7 @@
 
 由 [fadeawaylove](https://github.com/fadeawaylove/sing-box-yg) 维护的单仓库版本：VPN 管理和证书管理均在本仓库修改、审查和发布。
 
-> 已加入定时任务与证书维护修复及隔离回归测试；本地 Windows 验证不代表 Linux 部署验收。修复分支尚未发布，未修改服务器。
+> 已加入定时任务与证书维护修复及隔离回归测试。已有安装需按维护文档迁移证书与定时任务；仅替换管理脚本不会自动完成迁移。测试结果见 [验证记录](docs/maintenance-validation.md)。
 
 ## 统一入口
 
