@@ -35,6 +35,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/mai
 
 维护入口、依赖、隔离测试、生产迁移与回退步骤见 [维护文档](docs/maintenance-migration.md)。过去证书过期的具体原因仍未确证。**本次保留每日重启，不执行生产迁移。**
 
+已有标准安装可使用文档中的自动迁移入口：自动备份并识别现有证书，只更新脚本、证书安装钩子和任务，不重装或重启服务；不满足条件时停止。
+
 ## 安全验证
 
 ```bash

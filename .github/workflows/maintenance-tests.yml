@@ -20,6 +20,7 @@ jobs:
           bash tests/menu_flow.sh
           bash tests/install_flow.sh
           bash tests/update_flow.sh
+          bash tests/migration.sh
       - name: Official ACME offline rollback regression
         run: |
           client="$RUNNER_TEMP/acme-3.1.2.sh"

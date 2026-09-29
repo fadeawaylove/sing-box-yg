@@ -2,6 +2,20 @@
 
 以下生产命令是迁移操作说明，本次没有在服务器执行。先确认所用提交的 Linux 集成验证通过，再选择维护窗口迁移；备份后更新，不重新安装现有服务。
 
+## 保留运行状态的自动迁移
+
+已有标准安装可用 `scripts/migrate-maintenance.sh`。入口自动下载固定提交 `d179a120db25737ccf304c98cc5825b5231cbb61` 的维护脚本与管理脚本，避免下载过程中主分支变化导致版本混用。以 root 执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fadeawaylove/sing-box-yg/main/scripts/migrate-maintenance.sh -o /root/sbyg-migrate.sh && bash /root/sbyg-migrate.sh
+```
+
+入口按证书指纹匹配唯一的现有 ECC 账户记录，核对全部 DNS/IP SAN 和私钥，不依赖旧 `ca.log`。只有 ACME 保存的证书与正在使用的磁盘证书一致且有效时才迁移；过期、自签、不同证书、多个匹配记录、配置错误或缺少依赖时停止，不自动安装依赖或重新申请证书。
+
+完整配置、ACME 账户和证书归档保存在输出的 `/root/sing-box-yg-backup.*` 私有目录中，另存原 crontab 与所有待修改文件。脚本更新管理入口、证书安装目标/钩子及两条定时任务，**不写入现有 sing-box 配置或 live 证书，不调用启动、停止或重启**。保留每日 01:00 的原定重启行为。完成后应照常测试现有客户端连接。
+
+可捕获的执行错误会尝试自动恢复原脚本、账户安装配置、身份记录和 crontab，并明确报告恢复是否成功。断电、SIGKILL、磁盘损坏等不能保证自动恢复；备份不会删除。若发现其他进程更改了 live 配置或证书，停止并保留该变化，不用旧文件覆盖。手动回退前先检查备份归档中的 `.maintenance/lock`：它来自迁移期间，不应恢复为活动锁。非标准安装仍按下文逐步迁移。
+
 ## 已有行为与新接口
 
 - 每日 01:00 仍重启 sing-box，按 `/run/systemd/system` 或 `/run/openrc` 选择正在使用的服务管理器；未知环境拒绝写入任务。服务命令从固定 PATH 解析为绝对路径。
